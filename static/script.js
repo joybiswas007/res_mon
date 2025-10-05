@@ -1,4 +1,8 @@
-const ws = new WebSocket("ws://127.0.0.1:8080/ws");
+// Dynamic WebSocket URL construction
+const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+const wsUrl = `${protocol}//${window.location.host}/ws`;
+const ws = new WebSocket(wsUrl);
+
 const statusEl = document.getElementById("connection-status");
 const statusTextEl = statusEl.querySelector(".status-text");
 const messagesEl = document.getElementById("messages");
@@ -12,7 +16,7 @@ const themeOptions = document.querySelectorAll(".theme-option");
 const themeStylesheet = document.getElementById("theme-style");
 
 // Load saved theme from localStorage
-const savedTheme = localStorage.getItem("monitor-theme") || "cyber";
+const savedTheme = localStorage.getItem("res_mon-theme") || "glass";
 themeStylesheet.href = `/static/styles/${savedTheme}.css`;
 
 // Toggle dropdown
@@ -32,7 +36,7 @@ themeOptions.forEach((option) => {
     e.stopPropagation();
     const theme = option.dataset.theme;
     themeStylesheet.href = `/static/styles/${theme}.css`;
-    localStorage.setItem("monitor-theme", theme);
+    localStorage.setItem("res_mon-theme", theme);
     themeMenu.classList.remove("show");
   });
 });

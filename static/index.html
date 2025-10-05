@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>System Resources Monitor</title>
+    <link id="theme-style" rel="stylesheet" href="/static/styles/cyber.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div id="connection-status" class="status disconnected">
+          <span class="status-indicator"></span>
+          <span class="status-text">Connecting...</span>
+        </div>
+
+        <div class="theme-dropdown">
+          <button class="theme-dropdown-btn" id="theme-btn">
+            <span class="theme-icon">🎨</span>
+            <span class="theme-label">Theme</span>
+            <span class="theme-arrow">▼</span>
+          </button>
+          <div class="theme-dropdown-content" id="theme-menu">
+            <button class="theme-option" data-theme="glass">
+              🌈 Glassmorphism
+            </button>
+            <button class="theme-option" data-theme="cyber">
+              ⚡ Cyberpunk
+            </button>
+            <button class="theme-option" data-theme="brutal">
+              💥 Neo-Brutalist
+            </button>
+            <button class="theme-option" data-theme="terminal">
+              🖥️ Terminal
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="dashboard">
+        <div class="card">
+          <div class="card-header">
+            <h2>Memory Usage</h2>
+            <span class="icon">💾</span>
+          </div>
+          <div class="card-body">
+            <div class="metric-large">
+              <span id="memory-percent" class="value">0</span>
+              <span class="unit">%</span>
+            </div>
+            <div class="progress-bar">
+              <div id="memory-progress" class="progress-fill"></div>
+            </div>
+            <div class="metric-grid">
+              <div class="metric-item">
+                <span class="metric-label">Used</span>
+                <span id="memory-used" class="metric-value">0 GB</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Available</span>
+                <span id="memory-available" class="metric-value">0 GB</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Total</span>
+                <span id="memory-total" class="metric-value">0 GB</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Load Average</h2>
+            <span class="icon">⚡</span>
+          </div>
+          <div class="card-body">
+            <div class="load-metrics">
+              <div class="load-item">
+                <span class="load-label">1 min</span>
+                <span id="load-1" class="load-value">0.00</span>
+              </div>
+              <div class="load-item">
+                <span class="load-label">5 min</span>
+                <span id="load-5" class="load-value">0.00</span>
+              </div>
+              <div class="load-item">
+                <span class="load-label">15 min</span>
+                <span id="load-15" class="load-value">0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="partitions-section">
+        <div class="section-header">
+          <h3>Disk Partitions</h3>
+          <span class="partition-count" id="partition-count">0 partitions</span>
+        </div>
+        <div id="partitions-list" class="partitions-grid">
+          <div
+            class="partition-card healthy"
+            style="display: none"
+            data-template="true"
+          >
+            <div class="partition-header">
+              <div class="partition-info">
+                <span class="partition-device"></span>
+                <span class="partition-mount"></span>
+              </div>
+              <span class="partition-type"></span>
+            </div>
+            <div class="partition-body">
+              <div class="partition-usage">
+                <span class="usage-percent"></span>
+                <span class="usage-label">Used</span>
+              </div>
+              <div class="partition-progress">
+                <div class="partition-progress-fill"></div>
+              </div>
+              <div class="partition-stats">
+                <div class="stat">
+                  <span class="stat-label">Used</span>
+                  <span class="stat-value stat-used"></span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">Free</span>
+                  <span class="stat-value stat-free"></span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">Total</span>
+                  <span class="stat-value stat-total"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="logs-section">
+        <h3>Activity Log</h3>
+        <pre id="messages"></pre>
+      </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+  </body>
+</html>

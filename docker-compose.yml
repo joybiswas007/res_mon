@@ -1,0 +1,10 @@
+services:
+  res_mon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: res_mon
+    container_name: res_mon
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

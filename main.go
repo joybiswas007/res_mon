@@ -11,14 +11,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 // Embed the entire "static" directory, which includes assets
@@ -51,13 +54,13 @@ func (app *application) routes() http.Handler {
 	}
 
 	r.Handle("/static/", http.StripPrefix("/static", http.FileServer(http.FS(staticFS))))
-	r.HandleFunc("/", app.serveHTML)
+	r.HandleFunc("/", app.serveHTMLHandler)
 	r.HandleFunc("/ws", app.wsHandler)
 
 	return r
 }
 
-func (app *application) serveHTML(w http.ResponseWriter, r *http.Request) {
+func (app *application) serveHTMLHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFS(embeddedFiles, "static/index.html")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -87,7 +90,23 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer conn.Close()
 
-	for {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+		return
+	}
+	for range ticker.C {
+		uptime, err := host.Uptime()
+		if err != nil {
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+			return
+		}
+
 		v, err := mem.VirtualMemory()
 		if err != nil {
 			conn.WriteMessage(websocket.CloseMessage,
@@ -127,7 +146,61 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
+		processes, err := process.Processes()
+		if err != nil {
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+			return
+		}
+
+		var processInfos []ProcessInfo
+		for _, p := range processes {
+			name, err := p.Name()
+			if err != nil {
+				continue
+			}
+
+			// Get CPU percent (may return error for some system processes)
+			cpuPercent, _ := p.CPUPercent()
+
+			//memory info
+			memInfo, err := p.MemoryInfo()
+			if err != nil {
+				continue
+			}
+
+			cmdLine, err := p.Cmdline()
+			if err != nil {
+				continue
+			}
+
+			// memory percent
+			memPercent, _ := p.MemoryPercent()
+
+			// Get process status
+			status, _ := p.Status()
+
+			// Get username running the process
+			username, _ := p.Username()
+
+			processInfos = append(processInfos, ProcessInfo{
+				PID:           p.Pid,
+				Name:          name,
+				CPUPercent:    cpuPercent,
+				MemoryMB:      float64(memInfo.RSS) / 1024 / 1024, // Convert to MB
+				MemoryPercent: memPercent,
+				Status:        status[0], // Returns slice, take first status
+				Username:      username,
+				Cmdline:       cmdLine,
+			})
+		}
+
+		sort.Slice(processInfos, func(i, j int) bool {
+			return processInfos[i].CPUPercent > processInfos[j].CPUPercent
+		})
 		rs := Resources{
+			Hostname: hostname,
+			Uptime:   uptime,
 			Memory: Memory{
 				Total:       v.Total,
 				Free:        v.Free,
@@ -141,6 +214,7 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 				Load15: avg.Load15,
 			},
 			Partitions: diskPartitions,
+			Processes:  processInfos,
 		}
 
 		err = conn.WriteJSON(rs)
@@ -149,8 +223,6 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
 			return
 		}
-
-		time.Sleep(time.Second)
 	}
 }
 
@@ -267,8 +339,22 @@ type DiskPartition struct {
 	UsedPercent float64 `json:"usedPercent"`
 }
 
+type ProcessInfo struct {
+	PID           int32   `json:"pid"`
+	Name          string  `json:"name"`
+	CPUPercent    float64 `json:"cpuPercent"`
+	MemoryMB      float64 `json:"memoryMB"`
+	MemoryPercent float32 `json:"memoryPercent"`
+	Status        string  `json:"status"`
+	Username      string  `json:"username"`
+	Cmdline       string  `json:"cmdline"`
+}
+
 type Resources struct {
+	Hostname    string          `json:"hostname"`
+	Uptime      uint64          `json:"uptime"`
 	Memory      Memory          `json:"memory"`
 	LoadAverage LoadAverage     `json:"load_average"`
 	Partitions  []DiskPartition `json:"partitions"`
+	Processes   []ProcessInfo   `json:"processes"`
 }

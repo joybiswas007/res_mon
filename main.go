@@ -74,12 +74,10 @@ func (app *application) serveHTMLHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
-	var upgrader = websocket.Upgrader{
+	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+		CheckOrigin:     func(r *http.Request) bool { return true },
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -87,45 +85,34 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	defer conn.Close()
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+		sendClose(conn, err)
 		return
 	}
-	for range ticker.C {
+
+	// Helper function to gather and send resource info
+	sendSnapshot := func() error {
 		uptime, err := host.Uptime()
 		if err != nil {
-			conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
-			return
+			return err
 		}
 
 		v, err := mem.VirtualMemory()
 		if err != nil {
-			conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
-			return
+			return err
 		}
 
 		avg, err := load.Avg()
 		if err != nil {
-			conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
-			return
+			return err
 		}
-		// Pass false to get only physical devices
+
 		partitions, err := disk.Partitions(false)
 		if err != nil {
-			conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
-			return
+			return err
 		}
 
 		var diskPartitions []DiskPartition
@@ -134,7 +121,6 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-
 			diskPartitions = append(diskPartitions, DiskPartition{
 				Device:      partition.Device,
 				Mountpoint:  partition.Mountpoint,
@@ -148,9 +134,7 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		processes, err := process.Processes()
 		if err != nil {
-			conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
-			return
+			return err
 		}
 
 		var processInfos []ProcessInfo
@@ -160,36 +144,24 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// Get CPU percent (may return error for some system processes)
 			cpuPercent, _ := p.CPUPercent()
-
-			//memory info
 			memInfo, err := p.MemoryInfo()
 			if err != nil {
 				continue
 			}
 
-			cmdLine, err := p.Cmdline()
-			if err != nil {
-				continue
-			}
-
-			// memory percent
+			cmdLine, _ := p.Cmdline()
 			memPercent, _ := p.MemoryPercent()
-
-			// Get process status
 			status, _ := p.Status()
-
-			// Get username running the process
 			username, _ := p.Username()
 
 			processInfos = append(processInfos, ProcessInfo{
 				PID:           p.Pid,
 				Name:          name,
 				CPUPercent:    cpuPercent,
-				MemoryMB:      float64(memInfo.RSS) / 1024 / 1024, // Convert to MB
+				MemoryMB:      float64(memInfo.RSS) / 1024 / 1024,
 				MemoryPercent: memPercent,
-				Status:        status[0], // Returns slice, take first status
+				Status:        firstOrEmpty(status),
 				Username:      username,
 				Cmdline:       cmdLine,
 			})
@@ -198,6 +170,7 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 		sort.Slice(processInfos, func(i, j int) bool {
 			return processInfos[i].CPUPercent > processInfos[j].CPUPercent
 		})
+
 		rs := Resources{
 			Hostname: hostname,
 			Uptime:   uptime,
@@ -217,13 +190,42 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 			Processes:  processInfos,
 		}
 
-		err = conn.WriteJSON(rs)
-		if err != nil {
-			conn.WriteMessage(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+		return conn.WriteJSON(rs)
+	}
+
+	// Send the first snapshot immediately
+	if err := sendSnapshot(); err != nil {
+		sendClose(conn, err)
+		return
+	}
+
+	// Loop every second (1s delay after each send)
+	for {
+		select {
+		case <-r.Context().Done():
+			log.Println("client disconnected")
 			return
+		case <-time.After(1 * time.Second):
+			if err := sendSnapshot(); err != nil {
+				sendClose(conn, err)
+				return
+			}
 		}
 	}
+}
+
+// sendClose sends a proper close message
+func sendClose(conn *websocket.Conn, err error) {
+	_ = conn.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
+}
+
+// helper to safely extract first rune from process.Status()
+func firstOrEmpty(s []string) string {
+	if len(s) > 0 {
+		return s[0]
+	}
+	return ""
 }
 
 func (app *application) serve() error {

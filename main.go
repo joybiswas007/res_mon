@@ -24,7 +24,7 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-// Embed the entire "static" directory, which includes assets
+// Embed the entire "static" directory, which includes assets.
 //
 //go:embed "static"
 var embeddedFiles embed.FS
@@ -85,7 +85,12 @@ func (app *application) wsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}()
 
 	hostname, err := os.Hostname()
 	if err != nil {
